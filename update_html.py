@@ -64,16 +64,7 @@ def push_to_github(repo_dir, message="更新可视化"):
         return False
 
 
-# experiments = [
-#     {"name": "实验001", "description": "基准模型", "date": "2023-06-15", "file": "experiment_001_visualization.html"},
-#     {"name": "实验002", "description": "改进注意力机制", "date": "2023-06-20", "file": "experiment_002_visualization.html"},
-# ]
-
-# create_visualization_index(experiments, "results/index.html")
-
-
 root = 'results'
-
 experiments = []
 
 for file in os.listdir(root):
