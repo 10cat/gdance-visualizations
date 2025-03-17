@@ -81,7 +81,7 @@ for file in os.listdir(root):
         meta = {}
         meta['name'] = file.split('.')[0]
         meta['file'] = os.path.join(root, file)
-        # read the date-time of the file being added to this folder
+        # read the date-time of the file being updated to this folder
         meta['date'] = time.ctime(os.path.getctime(meta['file']))
         experiments.append(meta)
         
