@@ -17,7 +17,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         </style>
     </head>
     <body>
-        <h1>群舞可视化实验索引</h1>
+        <h1>Group Dance 3D Plot</h1>
         <ul class="exp-list">
     """
     
