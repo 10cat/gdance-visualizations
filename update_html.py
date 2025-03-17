@@ -1,3 +1,5 @@
+import os, time
+import subprocess
 def create_visualization_index(experiment_list, output_file="index.html"):
     """创建包含多个可视化链接的索引页面"""
     html_content = """
@@ -40,6 +42,27 @@ def create_visualization_index(experiment_list, output_file="index.html"):
     print(f"Update the index.html：{output_file}")
     return output_file
 
+def push_to_github(repo_dir, message="更新可视化"):
+    """将更改推送到GitHub仓库"""
+    try:
+        # 切换到仓库目录
+        os.chdir(repo_dir)
+        
+        # 添加所有更改
+        subprocess.run(["git", "add", "."], check=True)
+        
+        # 提交更改
+        subprocess.run(["git", "commit", "-m", message], check=True)
+        
+        # 推送到GitHub
+        subprocess.run(["git", "push"], check=True)
+        
+        print("已成功推送更改到GitHub")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"推送到GitHub时出错: {e}")
+        return False
+
 
 # experiments = [
 #     {"name": "实验001", "description": "基准模型", "date": "2023-06-15", "file": "experiment_001_visualization.html"},
@@ -48,7 +71,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
 
 # create_visualization_index(experiments, "results/index.html")
 
-import os, time
+
 root = 'results'
 
 experiments = []
@@ -63,6 +86,6 @@ for file in os.listdir(root):
         experiments.append(meta)
         
 create_visualization_index(experiments, "index.html")
-        
-        
+push_to_github('./', message="updat index.html")
+    
         
