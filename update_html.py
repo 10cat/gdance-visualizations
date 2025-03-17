@@ -6,7 +6,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
     <!DOCTYPE html>
     <html>
     <head>
-        <title>群舞可视化实验索引</title>
+        <title>Group Dance 3D Plot</title>
         <style>
             body { font-family: Arial, sans-serif; margin: 20px; }
             .exp-list { list-style-type: none; }
