@@ -97,9 +97,6 @@ def parse_existing_index(index_file="index.html"):
 def create_visualization_index(experiment_list, output_file="index.html"):
     """创建包含多个可视化链接的索引页面，按日期分组并支持折叠"""
     
-def create_visualization_index(experiment_list, output_file="index.html"):
-    """创建包含多个可视化链接的索引页面，按日期分组并支持折叠"""
-    
     # 首先解析现有的index.html文件获取准确的时间信息
     existing_times = parse_existing_index(output_file)
     
@@ -139,16 +136,29 @@ def create_visualization_index(experiment_list, output_file="index.html"):
             print(f"    🕒 今天日期 = {today}")
             print(f"    🔍 文件修改日期 = {system_date}")
             
-            # 检查文件是否在今天被修改过，且修改时间 > 原始记录时间
-            if system_date == today and system_datetime > original_datetime:
-                # 文件在今天被修改过，且时间更新：使用今天的修改时间
+            # 计算时间差（秒）
+            time_diff_seconds = (system_datetime - original_datetime).total_seconds()
+            print(f"    ⏰ 时间差 = {time_diff_seconds:.1f} 秒")
+            
+            # 设置最小更新阈值（1秒），避免微小时间差的误判
+            MIN_UPDATE_THRESHOLD_SECONDS = 1.0
+            
+            # 检查文件是否在今天被修改过，且修改时间明显大于原始记录时间
+            if system_date == today and time_diff_seconds > MIN_UPDATE_THRESHOLD_SECONDS:
+                # 文件在今天被修改过，且时间明显更新：使用今天的修改时间
                 date_obj = system_datetime
                 time_diff = system_datetime - original_datetime
                 source = f"今天修改 (修改时间: {system_datetime.strftime('%H:%M:%S')}, 比原始时间晚 {time_diff})"
                 updated_today_count += 1
                 print(f"  🔄 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
-            elif system_date == today and system_datetime <= original_datetime:
-                # 文件虽然是今天修改的，但时间没有比原始记录更新（可能是文件系统问题）
+            elif system_date == today and 0 < time_diff_seconds <= MIN_UPDATE_THRESHOLD_SECONDS:
+                # 文件是今天修改的，但时间差太小，认为是微小差异，不更新
+                date_obj = original_datetime
+                source = f"今天修改但时间差太小 ({time_diff_seconds:.1f}秒 ≤ {MIN_UPDATE_THRESHOLD_SECONDS}秒阈值)"
+                existing_count += 1
+                print(f"  ⏭️  {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
+            elif system_date == today and time_diff_seconds <= 0:
+                # 文件虽然是今天修改的，但时间没有比原始记录更新
                 date_obj = original_datetime
                 source = f"今天修改但时间未更新 (修改:{system_datetime.strftime('%H:%M:%S')} <= 原始:{original_datetime.strftime('%H:%M:%S')})"
                 existing_count += 1
@@ -174,7 +184,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         exp['time_display'] = date_obj.strftime('%H:%M:%S')
         exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
         exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
-        exp['is_updated_today'] = (filename in existing_times and system_date == today and system_datetime > original_datetime)
+        exp['is_updated_today'] = (filename in existing_times and system_date == today and time_diff_seconds > MIN_UPDATE_THRESHOLD_SECONDS)
         
         experiments_by_date[date_key].append(exp)
     
@@ -183,6 +193,9 @@ def create_visualization_index(experiment_list, output_file="index.html"):
     print(f"  🔄 今天更新的文件 (刷新时间): {updated_today_count}")
     print(f"  🆕 新增文件 (使用系统时间): {new_count}")
     print(f"  📋 总计: {len(experiment_list)} 个文件")
+    
+    if updated_today_count > 0:
+        print(f"\n🎉 本次更新了 {updated_today_count} 个文件的时间戳！")
     
     # 对每个日期下的实验按时间排序（最新的在前）
     for date_key in experiments_by_date:
@@ -297,10 +310,6 @@ def create_visualization_index(experiment_list, output_file="index.html"):
                 color: #7f8c8d;
                 font-size: 0.9em;
             }}
-            .exp-time.updated-today {{
-                color: #e74c3c;
-                font-weight: 600;
-            }}
             .exp-link {{
                 display: inline-block;
                 padding: 8px 16px;
@@ -376,19 +385,12 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         
         # 添加该日期下的所有实验
         for exp in experiments:
-            # 为今天更新的文件添加特殊标识
-            time_class = "exp-time"
-            # if exp.get('is_updated_today', False):
-            #     time_class += " updated-today"
-            #     time_prefix = "🔄 Updated: "
-            # else:
-            time_prefix = "Added: "
-            
+            # 统一使用Added格式
             html_content += f"""
                     <div class="exp-item">
                         <div class="exp-name">{exp['name']}</div>
                         <div class="exp-details">
-                            <span class="{time_class}">{time_prefix}{exp['original_date_str']}</span>
+                            <span class="exp-time">Added: {exp['original_date_str']}</span>
                             <a href="{exp['file']}" target="_blank" class="exp-link">
                                 🎮 Interact with 3D plot
                             </a>
