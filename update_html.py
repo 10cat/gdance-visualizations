@@ -119,14 +119,12 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         
         # 获取文件的系统时间信息
         try:
-            mtime = os.path.getmtime(exp['file'])
-            ctime = os.path.getctime(exp['file'])
-            system_timestamp = max(mtime, ctime)  # 使用较新的时间
-            system_datetime = datetime.fromtimestamp(system_timestamp)
+            mtime = os.path.getmtime(exp['file'])  # 文件修改时间
+            system_datetime = datetime.fromtimestamp(mtime)
             system_date = system_datetime.date()
             
-            # 调试信息：显示文件的系统时间
-            print(f"    📁 {filename}: 系统时间 = {system_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            # 调试信息：显示文件的最新修改时间
+            print(f"    📁 {filename}: 最新修改时间 = {system_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
             
         except Exception as e:
             print(f"  ❌ 无法获取 {filename} 的系统时间: {e}")
@@ -136,33 +134,35 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         # 决定使用哪个时间
         if filename in existing_times:
             original_datetime = existing_times[filename]
-            original_date = original_datetime.date()
             
-            print(f"    📅 {filename}: 原始时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"    📅 {filename}: 原始记录时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"    🕒 今天日期 = {today}")
-            print(f"    🔍 系统日期 = {system_date}, 原始日期 = {original_date}")
+            print(f"    🔍 文件修改日期 = {system_date}")
             
-            # 检查文件是否在今天被修改过
-            # 条件：系统修改时间是今天 AND 系统时间比原始时间新
+            # 检查文件是否在今天被修改过，且修改时间 > 原始记录时间
             if system_date == today and system_datetime > original_datetime:
-                # 今天修改的文件：使用系统时间并标记为更新
+                # 文件在今天被修改过，且时间更新：使用今天的修改时间
                 date_obj = system_datetime
-                source = f"今天更新 (系统时间: {system_datetime.strftime('%H:%M:%S')}, 原时间: {original_datetime.strftime('%H:%M:%S')})"
+                time_diff = system_datetime - original_datetime
+                source = f"今天修改 (修改时间: {system_datetime.strftime('%H:%M:%S')}, 比原始时间晚 {time_diff})"
                 updated_today_count += 1
                 print(f"  🔄 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
-            else:
-                # 不是今天修改的文件：保持原有时间
+            elif system_date == today and system_datetime <= original_datetime:
+                # 文件虽然是今天修改的，但时间没有比原始记录更新（可能是文件系统问题）
                 date_obj = original_datetime
-                if system_date == today:
-                    source = f"今天但未更新 (系统={system_datetime.strftime('%H:%M:%S')} <= 原始={original_datetime.strftime('%H:%M:%S')})"
-                else:
-                    source = "现有索引 (保持原始时间)"
+                source = f"今天修改但时间未更新 (修改:{system_datetime.strftime('%H:%M:%S')} <= 原始:{original_datetime.strftime('%H:%M:%S')})"
+                existing_count += 1
+                print(f"  ⏭️  {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
+            else:
+                # 文件不是今天修改的：保持原有记录时间
+                date_obj = original_datetime
+                source = "保持原始记录时间"
                 existing_count += 1
                 print(f"  📅 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         else:
-            # 新文件：使用系统时间
+            # 新文件：使用文件的修改时间
             date_obj = system_datetime
-            source = "新文件 (文件系统时间)"
+            source = "新文件 (文件修改时间)"
             new_count += 1
             print(f"  🆕 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         
@@ -174,7 +174,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         exp['time_display'] = date_obj.strftime('%H:%M:%S')
         exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
         exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
-        exp['is_updated_today'] = (filename in existing_times and system_date == today and system_datetime > existing_times[filename])
+        exp['is_updated_today'] = (filename in existing_times and system_date == today and system_datetime > original_datetime)
         
         experiments_by_date[date_key].append(exp)
     
