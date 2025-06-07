@@ -95,38 +95,53 @@ def create_visualization_index(experiment_list, output_file="index.html"):
     # 首先解析现有的index.html文件获取准确的时间信息
     existing_times = parse_existing_index(output_file)
     
+    # 获取今天的日期
+    today = datetime.now().date()
+    
     # 按日期分组实验
     experiments_by_date = defaultdict(list)
     
     print(f"🔍 处理文件时间信息...")
     existing_count = 0
     new_count = 0
+    updated_today_count = 0
     
     for exp in experiment_list:
         filename = exp['name']  # 不带扩展名的文件名
         
-        # 检查是否在现有索引中
+        # 获取文件的系统时间信息
+        try:
+            mtime = os.path.getmtime(exp['file'])
+            ctime = os.path.getctime(exp['file'])
+            system_timestamp = max(mtime, ctime)  # 使用较新的时间
+            system_datetime = datetime.fromtimestamp(system_timestamp)
+            system_date = system_datetime.date()
+        except Exception as e:
+            print(f"  ❌ 无法获取 {filename} 的系统时间: {e}")
+            system_datetime = datetime.now()
+            system_date = today
+        
+        # 决定使用哪个时间
         if filename in existing_times:
-            # 对于已存在的文件，始终使用现有索引中的时间
-            date_obj = existing_times[filename]
-            source = "现有索引 (保持原始时间)"
-            existing_count += 1
+            # 检查文件是否在今天被修改过
+            if system_date == today:
+                # 今天修改的文件：使用系统时间并标记为更新
+                date_obj = system_datetime
+                source = f"今天更新 (系统时间: {system_datetime.strftime('%H:%M:%S')})"
+                updated_today_count += 1
+                print(f"  🔄 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
+            else:
+                # 不是今天修改的文件：保持原有时间
+                date_obj = existing_times[filename]
+                source = "现有索引 (保持原始时间)"
+                existing_count += 1
+                print(f"  📅 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         else:
-            # 只有新文件才使用文件系统时间
-            try:
-                # 使用文件修改时间作为新文件的创建时间
-                mtime = os.path.getmtime(exp['file'])
-                ctime = os.path.getctime(exp['file'])
-                timestamp = min(mtime, ctime)
-                date_obj = datetime.fromtimestamp(timestamp)
-                source = "新文件 (文件系统时间)"
-                new_count += 1
-            except Exception as e:
-                print(f"  ❌ 无法获取新文件 {filename} 的时间信息: {e}")
-                # 备选方案：使用当前时间
-                date_obj = datetime.now()
-                source = "新文件 (当前时间 - fallback)"
-                new_count += 1
+            # 新文件：使用系统时间
+            date_obj = system_datetime
+            source = "新文件 (文件系统时间)"
+            new_count += 1
+            print(f"  🆕 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         
         date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
         
@@ -136,13 +151,13 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         exp['time_display'] = date_obj.strftime('%H:%M:%S')
         exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
         exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
-        
-        print(f"  📅 {filename[:45]:<45} -> {exp['date_display']} ({source})")
+        exp['is_updated_today'] = (filename in existing_times and system_date == today)
         
         experiments_by_date[date_key].append(exp)
     
     print(f"\n📊 文件处理统计:")
     print(f"  ✅ 现有文件 (保持原始时间): {existing_count}")
+    print(f"  🔄 今天更新的文件 (刷新时间): {updated_today_count}")
     print(f"  🆕 新增文件 (使用系统时间): {new_count}")
     print(f"  📋 总计: {len(experiment_list)} 个文件")
     
@@ -259,6 +274,10 @@ def create_visualization_index(experiment_list, output_file="index.html"):
                 color: #7f8c8d;
                 font-size: 0.9em;
             }}
+            .exp-time.updated-today {{
+                color: #e74c3c;
+                font-weight: 600;
+            }}
             .exp-link {{
                 display: inline-block;
                 padding: 8px 16px;
@@ -334,11 +353,19 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         
         # 添加该日期下的所有实验
         for exp in experiments:
+            # 为今天更新的文件添加特殊标识
+            time_class = "exp-time"
+            if exp.get('is_updated_today', False):
+                time_class += " updated-today"
+                time_prefix = "🔄 Updated: "
+            else:
+                time_prefix = "Added: "
+            
             html_content += f"""
                     <div class="exp-item">
                         <div class="exp-name">{exp['name']}</div>
                         <div class="exp-details">
-                            <span class="exp-time">Added: {exp['original_date_str']}</span>
+                            <span class="{time_class}">{time_prefix}{exp['original_date_str']}</span>
                             <a href="{exp['file']}" target="_blank" class="exp-link">
                                 🎮 Interact with 3D plot
                             </a>
@@ -441,11 +468,12 @@ def main():
         print("❌ 在results目录中没有找到HTML文件")
         return
     
-    print(f"\n📝 生成改进的索引页面...")
+    today = datetime.now().strftime('%Y-%m-%d')
+    print(f"\n📝 生成改进的索引页面 (今天: {today})...")
     create_visualization_index(experiments, "index.html")
     
     print(f"\n🚀 推送到GitHub...")
-    push_to_github('./', message="更新可视化索引页面 - 保持现有文件原始时间戳")
+    push_to_github('./', message=f"更新可视化索引页面 - 刷新今天更新的文件时间戳 ({today})")
 
 if __name__ == "__main__":
     main()
