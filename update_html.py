@@ -2,47 +2,108 @@ import os, time
 import subprocess
 from datetime import datetime
 from collections import defaultdict
+import re
+
+def parse_existing_index(index_file="index.html"):
+    """解析现有的index.html文件，提取文件名和对应的Time added信息"""
+    existing_times = {}
+    
+    if not os.path.exists(index_file):
+        print(f"⚠️  现有的 {index_file} 不存在，将使用文件系统时间")
+        return existing_times
+    
+    print(f"📖 解析现有的 {index_file} 文件...")
+    
+    try:
+        with open(index_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 匹配每个实验项目的模式
+        # 查找形如: <h3>filename</h3> ... <p><strong>Time added:</strong> date</p>
+        pattern = r'<h3>([^<]+)</h3>\s*<p><strong>Time added:</strong>\s*([^<]+)</p>'
+        matches = re.findall(pattern, content, re.IGNORECASE)
+        
+        for filename, time_str in matches:
+            # 清理文件名和时间字符串
+            filename = filename.strip()
+            time_str = time_str.strip()
+            
+            try:
+                # 解析时间字符串，例如: "Fri Mar 21 12:59:18 2025"
+                # 使用time.strptime解析
+                time_obj = time.strptime(time_str, "%a %b %d %H:%M:%S %Y")
+                datetime_obj = datetime(*time_obj[:6])
+                existing_times[filename] = datetime_obj
+                print(f"  ✅ {filename}: {time_str}")
+            except ValueError as e:
+                print(f"  ❌ 无法解析时间 '{time_str}' for {filename}: {e}")
+        
+        print(f"📊 从现有索引中找到 {len(existing_times)} 个文件的时间信息")
+        
+    except Exception as e:
+        print(f"❌ 解析现有索引文件时出错: {e}")
+    
+    return existing_times
 
 def create_visualization_index(experiment_list, output_file="index.html"):
     """创建包含多个可视化链接的索引页面，按日期分组并支持折叠"""
     
+def create_visualization_index(experiment_list, output_file="index.html"):
+    """创建包含多个可视化链接的索引页面，按日期分组并支持折叠"""
+    
+    # 首先解析现有的index.html文件获取准确的时间信息
+    existing_times = parse_existing_index(output_file)
+    
     # 按日期分组实验
     experiments_by_date = defaultdict(list)
     
-    print(f"🔍 分析文件日期...")
+    print(f"🔍 处理文件时间信息...")
+    existing_count = 0
+    new_count = 0
     
     for exp in experiment_list:
-        # 尝试使用文件修改时间，如果不可用则使用创建时间
-        try:
-            # 优先使用修改时间
-            mtime = os.path.getmtime(exp['file'])
-            ctime = os.path.getctime(exp['file'])
-            
-            # 使用更早的时间作为"创建"时间
-            timestamp = min(mtime, ctime)
-            
-            date_obj = datetime.fromtimestamp(timestamp)
-            date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
-            
-            # 添加详细时间信息到实验数据
-            exp['datetime'] = date_obj
-            exp['date_key'] = date_key
-            exp['time_display'] = date_obj.strftime('%H:%M:%S')
-            exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
-            
-            print(f"  📅 {exp['name'][:50]}... -> {exp['date_display']}")
-            
-            experiments_by_date[date_key].append(exp)
-            
-        except Exception as e:
-            print(f"  ❌ 无法获取 {exp['name']} 的时间信息: {e}")
-            # 如果获取时间失败，使用当前时间
-            now = datetime.now()
-            exp['datetime'] = now
-            exp['date_key'] = now.strftime('%Y-%m-%d')
-            exp['time_display'] = now.strftime('%H:%M:%S')
-            exp['date_display'] = now.strftime('%Y-%m-%d %H:%M:%S')
-            experiments_by_date[exp['date_key']].append(exp)
+        filename = exp['name']  # 不带扩展名的文件名
+        
+        # 检查是否在现有索引中
+        if filename in existing_times:
+            # 对于已存在的文件，始终使用现有索引中的时间
+            date_obj = existing_times[filename]
+            source = "现有索引 (保持原始时间)"
+            existing_count += 1
+        else:
+            # 只有新文件才使用文件系统时间
+            try:
+                # 使用文件修改时间作为新文件的创建时间
+                mtime = os.path.getmtime(exp['file'])
+                ctime = os.path.getctime(exp['file'])
+                timestamp = min(mtime, ctime)
+                date_obj = datetime.fromtimestamp(timestamp)
+                source = "新文件 (文件系统时间)"
+                new_count += 1
+            except Exception as e:
+                print(f"  ❌ 无法获取新文件 {filename} 的时间信息: {e}")
+                # 备选方案：使用当前时间
+                date_obj = datetime.now()
+                source = "新文件 (当前时间 - fallback)"
+                new_count += 1
+        
+        date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
+        
+        # 添加详细时间信息到实验数据
+        exp['datetime'] = date_obj
+        exp['date_key'] = date_key
+        exp['time_display'] = date_obj.strftime('%H:%M:%S')
+        exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+        exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
+        
+        print(f"  📅 {filename[:45]:<45} -> {exp['date_display']} ({source})")
+        
+        experiments_by_date[date_key].append(exp)
+    
+    print(f"\n📊 文件处理统计:")
+    print(f"  ✅ 现有文件 (保持原始时间): {existing_count}")
+    print(f"  🆕 新增文件 (使用系统时间): {new_count}")
+    print(f"  📋 总计: {len(experiment_list)} 个文件")
     
     # 对每个日期下的实验按时间排序（最新的在前）
     for date_key in experiments_by_date:
@@ -236,7 +297,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
                     <div class="exp-item">
                         <div class="exp-name">{exp['name']}</div>
                         <div class="exp-details">
-                            <span class="exp-time">Added at {exp['time_display']}</span>
+                            <span class="exp-time">Added: {exp['original_date_str']}</span>
                             <a href="{exp['file']}" target="_blank" class="exp-link">
                                 🎮 Interact with 3D plot
                             </a>
@@ -328,25 +389,22 @@ def main():
     for file in os.listdir(root):
         if file.endswith('.html'):
             meta = {}
-            meta['name'] = file.split('.')[0]
+            meta['name'] = file.split('.')[0]  # 文件名（不含扩展名）
             meta['file'] = os.path.join(root, file)
             
-            # 使用文件的修改时间作为创建时间
             if os.path.exists(meta['file']):
-                meta['date'] = time.ctime(os.path.getctime(meta['file']))
                 experiments.append(meta)
-                print(f"  📄 找到: {file}")
+                print(f"  📄 发现: {file}")
     
     if not experiments:
         print("❌ 在results目录中没有找到HTML文件")
         return
     
-    print(f"📝 生成索引页面...")
+    print(f"\n📝 生成改进的索引页面...")
     create_visualization_index(experiments, "index.html")
     
-    # 推送到GitHub
-    print(f"🚀 推送到GitHub...")
-    push_to_github('./', message="更新可视化索引页面 - 改进日期分组布局")
+    print(f"\n🚀 推送到GitHub...")
+    push_to_github('./', message="更新可视化索引页面 - 保持现有文件原始时间戳")
 
 if __name__ == "__main__":
     main()
