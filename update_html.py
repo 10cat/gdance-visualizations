@@ -20,26 +20,33 @@ def parse_existing_index(index_file="index.html"):
         
         # 多种解析模式，确保能够正确提取时间信息
         
-        # 模式1: 匹配新版本的格式 (折叠式布局)
+        # 模式1: 匹配新版本的格式 (折叠式布局) - 包含 Added: 和 Updated:
         # <div class="exp-name">filename</div> ... <span class="exp-time">Added: date</span>
-        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time">Added:\s*([^<]+)</span>'
+        # <div class="exp-name">filename</div> ... <span class="exp-time">🔄 Updated: date</span>
+        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time[^"]*">(?:🔄 Updated:|Added:)\s*([^<]+)</span>'
         matches1 = re.findall(pattern1, content, re.DOTALL | re.IGNORECASE)
         
-        # 模式2: 匹配旧版本的格式
-        # <h3>filename</h3> ... <p><strong>Time added:</strong> date</p>
-        pattern2 = r'<h3>([^<]+)</h3>.*?<p><strong>Time added:</strong>\s*([^<]+)</p>'
+        # 模式2: 更宽松的匹配，处理可能的emoji和特殊字符
+        # 匹配任何形式的时间前缀
+        pattern2 = r'<div class="exp-name">([^<]+)</div>.*?<span[^>]*class="exp-time[^"]*"[^>]*>(?:[^:]*:)?\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})</span>'
         matches2 = re.findall(pattern2, content, re.DOTALL | re.IGNORECASE)
         
-        # 模式3: 匹配其他可能的格式
-        # <div class="exp-name">filename</div> ... Added: date
-        pattern3 = r'<div[^>]*class="exp-name"[^>]*>([^<]+)</div>.*?Added:\s*([^<\n]+)'
+        # 模式3: 匹配旧版本的格式
+        # <h3>filename</h3> ... <p><strong>Time added:</strong> date</p>
+        pattern3 = r'<h3>([^<]+)</h3>.*?<p><strong>Time added:</strong>\s*([^<]+)</p>'
         matches3 = re.findall(pattern3, content, re.DOTALL | re.IGNORECASE)
         
-        all_matches = matches1 + matches2 + matches3
+        # 模式4: 更通用的时间匹配，直接查找标准时间格式
+        # 在exp-name附近查找标准时间格式
+        pattern4 = r'<div class="exp-name">([^<]+)</div>.*?([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})'
+        matches4 = re.findall(pattern4, content, re.DOTALL | re.IGNORECASE)
         
-        print(f"  🔍 找到 {len(matches1)} 个新格式匹配")
-        print(f"  🔍 找到 {len(matches2)} 个旧格式匹配") 
-        print(f"  🔍 找到 {len(matches3)} 个其他格式匹配")
+        all_matches = matches1 + matches2 + matches3 + matches4
+        
+        print(f"  🔍 找到 {len(matches1)} 个新格式匹配 (Added/Updated)")
+        print(f"  🔍 找到 {len(matches2)} 个宽松格式匹配")
+        print(f"  🔍 找到 {len(matches3)} 个旧格式匹配") 
+        print(f"  🔍 找到 {len(matches4)} 个通用时间匹配")
         
         processed_count = 0
         for filename, time_str in all_matches:
@@ -75,11 +82,12 @@ def parse_existing_index(index_file="index.html"):
         # 如果解析结果很少，提供调试信息
         if processed_count < 10:
             print(f"⚠️  解析结果较少，请检查HTML格式")
-            print(f"HTML文件前500字符:")
-            print(content[:500])
-            print("...")
-            print(f"HTML文件后500字符:")
-            print(content[-500:])
+            # 查找所有exp-name和exp-time的样例
+            exp_name_samples = re.findall(r'<div class="exp-name">([^<]+)</div>', content)[:5]
+            exp_time_samples = re.findall(r'<span[^>]*class="exp-time[^"]*"[^>]*>([^<]+)</span>', content)[:5]
+            
+            print(f"实验名称样例: {exp_name_samples}")
+            print(f"时间信息样例: {exp_time_samples}")
         
     except Exception as e:
         print(f"❌ 解析现有索引文件时出错: {e}")
