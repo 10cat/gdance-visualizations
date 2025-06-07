@@ -9,18 +9,40 @@ def create_visualization_index(experiment_list, output_file="index.html"):
     # 按日期分组实验
     experiments_by_date = defaultdict(list)
     
+    print(f"🔍 分析文件日期...")
+    
     for exp in experiment_list:
-        # 解析时间戳
-        timestamp = os.path.getctime(exp['file'])
-        date_obj = datetime.fromtimestamp(timestamp)
-        date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
-        
-        # 添加详细时间信息到实验数据
-        exp['datetime'] = date_obj
-        exp['date_key'] = date_key
-        exp['time_display'] = date_obj.strftime('%H:%M:%S')
-        
-        experiments_by_date[date_key].append(exp)
+        # 尝试使用文件修改时间，如果不可用则使用创建时间
+        try:
+            # 优先使用修改时间
+            mtime = os.path.getmtime(exp['file'])
+            ctime = os.path.getctime(exp['file'])
+            
+            # 使用更早的时间作为"创建"时间
+            timestamp = min(mtime, ctime)
+            
+            date_obj = datetime.fromtimestamp(timestamp)
+            date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
+            
+            # 添加详细时间信息到实验数据
+            exp['datetime'] = date_obj
+            exp['date_key'] = date_key
+            exp['time_display'] = date_obj.strftime('%H:%M:%S')
+            exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+            
+            print(f"  📅 {exp['name'][:50]}... -> {exp['date_display']}")
+            
+            experiments_by_date[date_key].append(exp)
+            
+        except Exception as e:
+            print(f"  ❌ 无法获取 {exp['name']} 的时间信息: {e}")
+            # 如果获取时间失败，使用当前时间
+            now = datetime.now()
+            exp['datetime'] = now
+            exp['date_key'] = now.strftime('%Y-%m-%d')
+            exp['time_display'] = now.strftime('%H:%M:%S')
+            exp['date_display'] = now.strftime('%Y-%m-%d %H:%M:%S')
+            experiments_by_date[exp['date_key']].append(exp)
     
     # 对每个日期下的实验按时间排序（最新的在前）
     for date_key in experiments_by_date:
@@ -28,6 +50,13 @@ def create_visualization_index(experiment_list, output_file="index.html"):
     
     # 获取排序后的日期列表（最新的在前）
     sorted_dates = sorted(experiments_by_date.keys(), reverse=True)
+    
+    print(f"📊 日期分布统计:")
+    for date_key in sorted_dates:
+        count = len(experiments_by_date[date_key])
+        print(f"  📅 {date_key}: {count} 个实验")
+    
+    print(f"📈 总计: {len(experiment_list)} 个实验分布在 {len(sorted_dates)} 天")
     
     # 创建HTML内容
     html_template = """
