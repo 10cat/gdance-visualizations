@@ -7,10 +7,11 @@ import re
 def parse_existing_index(index_file="index.html"):
     """解析现有的index.html文件，提取文件名和对应的Time added信息"""
     existing_times = {}
+    previously_updated_files = set()  # 记录之前被标记为Updated的文件
     
     if not os.path.exists(index_file):
         print(f"⚠️  现有的 {index_file} 不存在，将使用文件系统时间")
-        return existing_times
+        return existing_times, previously_updated_files
     
     print(f"📖 解析现有的 {index_file} 文件...")
     
@@ -23,12 +24,12 @@ def parse_existing_index(index_file="index.html"):
         # 模式1: 匹配新版本的格式 (折叠式布局) - 包含 Added: 和 Updated:
         # <div class="exp-name">filename</div> ... <span class="exp-time">Added: date</span>
         # <div class="exp-name">filename</div> ... <span class="exp-time">🔄 Updated: date</span>
-        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time[^"]*">(?:🔄 Updated:|Added:)\s*([^<]+)</span>'
+        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time[^"]*">((?:🔄 Updated:|Added:)\s*[^<]+)</span>'
         matches1 = re.findall(pattern1, content, re.DOTALL | re.IGNORECASE)
         
         # 模式2: 更宽松的匹配，处理可能的emoji和特殊字符
         # 匹配任何形式的时间前缀
-        pattern2 = r'<div class="exp-name">([^<]+)</div>.*?<span[^>]*class="exp-time[^"]*"[^>]*>(?:[^:]*:)?\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})</span>'
+        pattern2 = r'<div class="exp-name">([^<]+)</div>.*?<span[^>]*class="exp-time[^"]*"[^>]*>([^<]*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}))</span>'
         matches2 = re.findall(pattern2, content, re.DOTALL | re.IGNORECASE)
         
         # 模式3: 匹配旧版本的格式
@@ -36,20 +37,34 @@ def parse_existing_index(index_file="index.html"):
         pattern3 = r'<h3>([^<]+)</h3>.*?<p><strong>Time added:</strong>\s*([^<]+)</p>'
         matches3 = re.findall(pattern3, content, re.DOTALL | re.IGNORECASE)
         
-        # 模式4: 更通用的时间匹配，直接查找标准时间格式
-        # 在exp-name附近查找标准时间格式
-        pattern4 = r'<div class="exp-name">([^<]+)</div>.*?([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})'
-        matches4 = re.findall(pattern4, content, re.DOTALL | re.IGNORECASE)
+        # 处理模式1的结果（包含前缀信息）
+        processed_matches = []
+        for filename, full_time_str in matches1:
+            if '🔄 Updated:' in full_time_str:
+                # 之前被标记为Updated的文件
+                previously_updated_files.add(filename.strip())
+                time_str = full_time_str.replace('🔄 Updated:', '').strip()
+            else:
+                time_str = full_time_str.replace('Added:', '').strip()
+            processed_matches.append((filename, time_str))
         
-        all_matches = matches1 + matches2 + matches3 + matches4
+        # 处理模式2的结果（提取时间部分）
+        for filename, full_match, time_str in matches2:
+            if '🔄 Updated:' in full_match:
+                previously_updated_files.add(filename.strip())
+            processed_matches.append((filename, time_str))
+        
+        # 处理模式3的结果
+        for filename, time_str in matches3:
+            processed_matches.append((filename, time_str))
         
         print(f"  🔍 找到 {len(matches1)} 个新格式匹配 (Added/Updated)")
         print(f"  🔍 找到 {len(matches2)} 个宽松格式匹配")
         print(f"  🔍 找到 {len(matches3)} 个旧格式匹配") 
-        print(f"  🔍 找到 {len(matches4)} 个通用时间匹配")
+        print(f"  🔄 发现 {len(previously_updated_files)} 个之前标记为Updated的文件")
         
         processed_count = 0
-        for filename, time_str in all_matches:
+        for filename, time_str in processed_matches:
             # 清理文件名和时间字符串
             filename = filename.strip()
             time_str = time_str.strip()
@@ -92,7 +107,7 @@ def parse_existing_index(index_file="index.html"):
     except Exception as e:
         print(f"❌ 解析现有索引文件时出错: {e}")
     
-    return existing_times
+    return existing_times, previously_updated_files
 
 def create_visualization_index(experiment_list, output_file="index.html"):
     """创建包含多个可视化链接的索引页面，按日期分组并支持折叠"""
@@ -120,11 +135,18 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         # 获取文件的系统时间信息
         try:
             mtime = os.path.getmtime(exp['file'])  # 文件修改时间
+            ctime = os.path.getctime(exp['file'])  # 文件创建时间
+            atime = os.path.getatime(exp['file'])  # 文件访问时间
+            
             system_datetime = datetime.fromtimestamp(mtime)
             system_date = system_datetime.date()
             
-            # 调试信息：显示文件的最新修改时间
-            print(f"    📁 {filename}: 最新修改时间 = {system_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            # 详细调试信息：显示所有时间戳
+            print(f"    📁 {filename}:")
+            print(f"      🕐 修改时间 (mtime) = {datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"      🕑 创建时间 (ctime) = {datetime.fromtimestamp(ctime).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"      🕒 访问时间 (atime) = {datetime.fromtimestamp(atime).strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"      📅 使用修改时间作为判断基准")
             
         except Exception as e:
             print(f"  ❌ 无法获取 {filename} 的系统时间: {e}")
@@ -135,28 +157,43 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         if filename in existing_times:
             original_datetime = existing_times[filename]
             
-            print(f"    📅 {filename}: 原始记录时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"    🕒 今天日期 = {today}")
-            print(f"    🔍 文件修改日期 = {system_date}")
+            print(f"      📋 原始记录时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"      🌅 今天日期 = {today}")
+            print(f"      📊 文件修改日期 = {system_date}")
             
-            # 检查文件是否在今天被修改过，且修改时间 > 原始记录时间
-            if system_date == today and system_datetime > original_datetime:
-                # 文件在今天被修改过，且时间更新：使用今天的修改时间
+            # 时间比较
+            time_diff_seconds = (system_datetime - original_datetime).total_seconds()
+            print(f"      ⏰ 时间差 = {time_diff_seconds:.1f} 秒 ({system_datetime.strftime('%H:%M:%S')} vs {original_datetime.strftime('%H:%M:%S')})")
+            
+            # 设置最小更新阈值（1秒），避免微小时间差的误判
+            MIN_UPDATE_THRESHOLD_SECONDS = 1.0
+            
+            # 检查文件是否在今天被修改过，且修改时间明显大于原始记录时间
+            if system_date == today and time_diff_seconds > MIN_UPDATE_THRESHOLD_SECONDS:
+                # 文件在今天被修改过，且时间明显更新：使用今天的修改时间
                 date_obj = system_datetime
                 time_diff = system_datetime - original_datetime
                 source = f"今天修改 (修改时间: {system_datetime.strftime('%H:%M:%S')}, 比原始时间晚 {time_diff})"
                 updated_today_count += 1
                 print(f"  🔄 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
-            elif system_date == today and system_datetime <= original_datetime:
-                # 文件虽然是今天修改的，但时间没有比原始记录更新（可能是文件系统问题）
+            elif system_date == today and 0 < time_diff_seconds <= MIN_UPDATE_THRESHOLD_SECONDS:
+                # 文件是今天修改的，但时间差太小，认为是微小差异，不更新
+                date_obj = original_datetime
+                source = f"今天修改但时间差太小 ({time_diff_seconds:.1f}秒 ≤ {MIN_UPDATE_THRESHOLD_SECONDS}秒阈值)"
+                existing_count += 1
+                print(f"  ⏭️  {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
+            elif system_date == today and time_diff_seconds <= 0:
+                # 文件虽然是今天修改的，但时间没有比原始记录更新
                 date_obj = original_datetime
                 source = f"今天修改但时间未更新 (修改:{system_datetime.strftime('%H:%M:%S')} <= 原始:{original_datetime.strftime('%H:%M:%S')})"
                 existing_count += 1
                 print(f"  ⏭️  {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
+                print(f"      ⚠️  可能原因: 1)时钟不准确 2)文件时间戳没有正确更新 3)原始记录时间有误")
             else:
                 # 文件不是今天修改的：保持原有记录时间
                 date_obj = original_datetime
-                source = "保持原始记录时间"
+                days_diff = (today - system_date).days
+                source = f"保持原始记录时间 (文件最后修改: {days_diff}天前)"
                 existing_count += 1
                 print(f"  📅 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         else:
@@ -166,17 +203,8 @@ def create_visualization_index(experiment_list, output_file="index.html"):
             new_count += 1
             print(f"  🆕 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         
-        date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
-        
-        # 添加详细时间信息到实验数据
-        exp['datetime'] = date_obj
-        exp['date_key'] = date_key
-        exp['time_display'] = date_obj.strftime('%H:%M:%S')
-        exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
-        exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
-        exp['is_updated_today'] = (filename in existing_times and system_date == today and system_datetime > original_datetime)
-        
-        experiments_by_date[date_key].append(exp)
+        print(f"      ✅ 最终使用时间: {date_obj.strftime('%Y-%m-%d %H:%M:%S')}")
+        print()  # 空行分隔
     
     print(f"\n📊 文件处理统计:")
     print(f"  ✅ 现有文件 (保持原始时间): {existing_count}")
