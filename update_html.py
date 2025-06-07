@@ -18,14 +18,16 @@ def parse_existing_index(index_file="index.html"):
         with open(index_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # 统一匹配格式，不区分Added或Updated
-        # 模式1: 匹配新版本的格式 (折叠式布局)
+        # 多种解析模式，确保能够正确提取时间信息
+        
+        # 模式1: 匹配新版本的格式 (折叠式布局) - 包含 Added: 和 Updated:
         # <div class="exp-name">filename</div> ... <span class="exp-time">Added: date</span>
         # <div class="exp-name">filename</div> ... <span class="exp-time">🔄 Updated: date</span>
         pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time[^"]*">(?:🔄 Updated:|Added:)\s*([^<]+)</span>'
         matches1 = re.findall(pattern1, content, re.DOTALL | re.IGNORECASE)
         
-        # 模式2: 更宽松的匹配，直接查找标准时间格式
+        # 模式2: 更宽松的匹配，处理可能的emoji和特殊字符
+        # 匹配任何形式的时间前缀
         pattern2 = r'<div class="exp-name">([^<]+)</div>.*?<span[^>]*class="exp-time[^"]*"[^>]*>(?:[^:]*:)?\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})</span>'
         matches2 = re.findall(pattern2, content, re.DOTALL | re.IGNORECASE)
         
@@ -34,11 +36,17 @@ def parse_existing_index(index_file="index.html"):
         pattern3 = r'<h3>([^<]+)</h3>.*?<p><strong>Time added:</strong>\s*([^<]+)</p>'
         matches3 = re.findall(pattern3, content, re.DOTALL | re.IGNORECASE)
         
-        all_matches = matches1 + matches2 + matches3
+        # 模式4: 更通用的时间匹配，直接查找标准时间格式
+        # 在exp-name附近查找标准时间格式
+        pattern4 = r'<div class="exp-name">([^<]+)</div>.*?([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})'
+        matches4 = re.findall(pattern4, content, re.DOTALL | re.IGNORECASE)
         
-        print(f"  🔍 找到 {len(matches1)} 个新格式匹配")
+        all_matches = matches1 + matches2 + matches3 + matches4
+        
+        print(f"  🔍 找到 {len(matches1)} 个新格式匹配 (Added/Updated)")
         print(f"  🔍 找到 {len(matches2)} 个宽松格式匹配")
         print(f"  🔍 找到 {len(matches3)} 个旧格式匹配") 
+        print(f"  🔍 找到 {len(matches4)} 个通用时间匹配")
         
         processed_count = 0
         for filename, time_str in all_matches:
@@ -59,6 +67,15 @@ def parse_existing_index(index_file="index.html"):
                 print(f"  ✅ {filename}: {time_str}")
             except ValueError as e:
                 print(f"  ⚠️  无法解析时间 '{time_str}' for {filename}: {e}")
+                # 尝试其他时间格式
+                try:
+                    # 尝试解析 ISO 格式或其他格式
+                    datetime_obj = datetime.fromisoformat(time_str.replace('T', ' ').replace('Z', ''))
+                    existing_times[filename] = datetime_obj
+                    processed_count += 1
+                    print(f"  ✅ {filename}: {time_str} (备用格式)")
+                except:
+                    print(f"  ❌ 完全无法解析时间 '{time_str}' for {filename}")
         
         print(f"📊 成功解析 {processed_count} 个文件的时间信息")
         
@@ -293,6 +310,10 @@ def create_visualization_index(experiment_list, output_file="index.html"):
                 color: #7f8c8d;
                 font-size: 0.9em;
             }}
+            .exp-time.updated-today {{
+                color: #e74c3c;
+                font-weight: 600;
+            }}
             .exp-link {{
                 display: inline-block;
                 padding: 8px 16px;
@@ -368,12 +389,19 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         
         # 添加该日期下的所有实验
         for exp in experiments:
-            # 统一使用Added格式，不区分更新状态
+            # 为今天更新的文件添加特殊标识
+            time_class = "exp-time"
+            # if exp.get('is_updated_today', False):
+            #     time_class += " updated-today"
+            #     time_prefix = "🔄 Updated: "
+            # else:
+            time_prefix = "Added: "
+            
             html_content += f"""
                     <div class="exp-item">
                         <div class="exp-name">{exp['name']}</div>
                         <div class="exp-details">
-                            <span class="exp-time">Added: {exp['original_date_str']}</span>
+                            <span class="{time_class}">{time_prefix}{exp['original_date_str']}</span>
                             <a href="{exp['file']}" target="_blank" class="exp-link">
                                 🎮 Interact with 3D plot
                             </a>
