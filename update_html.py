@@ -18,27 +18,68 @@ def parse_existing_index(index_file="index.html"):
         with open(index_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # 匹配每个实验项目的模式
-        # 查找形如: <h3>filename</h3> ... <p><strong>Time added:</strong> date</p>
-        pattern = r'<h3>([^<]+)</h3>\s*<p><strong>Time added:</strong>\s*([^<]+)</p>'
-        matches = re.findall(pattern, content, re.IGNORECASE)
+        # 多种解析模式，确保能够正确提取时间信息
         
-        for filename, time_str in matches:
+        # 模式1: 匹配新版本的格式 (折叠式布局)
+        # <div class="exp-name">filename</div> ... <span class="exp-time">Added: date</span>
+        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time">Added:\s*([^<]+)</span>'
+        matches1 = re.findall(pattern1, content, re.DOTALL | re.IGNORECASE)
+        
+        # 模式2: 匹配旧版本的格式
+        # <h3>filename</h3> ... <p><strong>Time added:</strong> date</p>
+        pattern2 = r'<h3>([^<]+)</h3>.*?<p><strong>Time added:</strong>\s*([^<]+)</p>'
+        matches2 = re.findall(pattern2, content, re.DOTALL | re.IGNORECASE)
+        
+        # 模式3: 匹配其他可能的格式
+        # <div class="exp-name">filename</div> ... Added: date
+        pattern3 = r'<div[^>]*class="exp-name"[^>]*>([^<]+)</div>.*?Added:\s*([^<\n]+)'
+        matches3 = re.findall(pattern3, content, re.DOTALL | re.IGNORECASE)
+        
+        all_matches = matches1 + matches2 + matches3
+        
+        print(f"  🔍 找到 {len(matches1)} 个新格式匹配")
+        print(f"  🔍 找到 {len(matches2)} 个旧格式匹配") 
+        print(f"  🔍 找到 {len(matches3)} 个其他格式匹配")
+        
+        processed_count = 0
+        for filename, time_str in all_matches:
             # 清理文件名和时间字符串
             filename = filename.strip()
             time_str = time_str.strip()
             
+            # 跳过已经处理过的文件（避免重复）
+            if filename in existing_times:
+                continue
+                
             try:
                 # 解析时间字符串，例如: "Fri Mar 21 12:59:18 2025"
-                # 使用time.strptime解析
                 time_obj = time.strptime(time_str, "%a %b %d %H:%M:%S %Y")
                 datetime_obj = datetime(*time_obj[:6])
                 existing_times[filename] = datetime_obj
+                processed_count += 1
                 print(f"  ✅ {filename}: {time_str}")
             except ValueError as e:
-                print(f"  ❌ 无法解析时间 '{time_str}' for {filename}: {e}")
+                print(f"  ⚠️  无法解析时间 '{time_str}' for {filename}: {e}")
+                # 尝试其他时间格式
+                try:
+                    # 尝试解析 ISO 格式或其他格式
+                    datetime_obj = datetime.fromisoformat(time_str.replace('T', ' ').replace('Z', ''))
+                    existing_times[filename] = datetime_obj
+                    processed_count += 1
+                    print(f"  ✅ {filename}: {time_str} (备用格式)")
+                except:
+                    print(f"  ❌ 完全无法解析时间 '{time_str}' for {filename}")
         
-        print(f"📊 从现有索引中找到 {len(existing_times)} 个文件的时间信息")
+        print(f"📊 成功解析 {processed_count} 个文件的时间信息")
+        
+        # 如果解析结果很少，提供调试信息
+        if processed_count < 10:
+            print(f"⚠️  解析结果较少，请检查HTML格式")
+            print(f"HTML文件前500字符:")
+            print(content[:500])
+            print("...")
+            print(f"HTML文件后500字符:")
+            print(content[-500:])
         
     except Exception as e:
         print(f"❌ 解析现有索引文件时出错: {e}")
