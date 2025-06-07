@@ -7,11 +7,10 @@ import re
 def parse_existing_index(index_file="index.html"):
     """解析现有的index.html文件，提取文件名和对应的Time added信息"""
     existing_times = {}
-    previously_updated_files = set()  # 记录之前被标记为Updated的文件
     
     if not os.path.exists(index_file):
         print(f"⚠️  现有的 {index_file} 不存在，将使用文件系统时间")
-        return existing_times, previously_updated_files
+        return existing_times
     
     print(f"📖 解析现有的 {index_file} 文件...")
     
@@ -19,17 +18,15 @@ def parse_existing_index(index_file="index.html"):
         with open(index_file, 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # 多种解析模式，确保能够正确提取时间信息
-        
-        # 模式1: 匹配新版本的格式 (折叠式布局) - 包含 Added: 和 Updated:
+        # 统一匹配格式，不区分Added或Updated
+        # 模式1: 匹配新版本的格式 (折叠式布局)
         # <div class="exp-name">filename</div> ... <span class="exp-time">Added: date</span>
         # <div class="exp-name">filename</div> ... <span class="exp-time">🔄 Updated: date</span>
-        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time[^"]*">((?:🔄 Updated:|Added:)\s*[^<]+)</span>'
+        pattern1 = r'<div class="exp-name">([^<]+)</div>.*?<span class="exp-time[^"]*">(?:🔄 Updated:|Added:)\s*([^<]+)</span>'
         matches1 = re.findall(pattern1, content, re.DOTALL | re.IGNORECASE)
         
-        # 模式2: 更宽松的匹配，处理可能的emoji和特殊字符
-        # 匹配任何形式的时间前缀
-        pattern2 = r'<div class="exp-name">([^<]+)</div>.*?<span[^>]*class="exp-time[^"]*"[^>]*>([^<]*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4}))</span>'
+        # 模式2: 更宽松的匹配，直接查找标准时间格式
+        pattern2 = r'<div class="exp-name">([^<]+)</div>.*?<span[^>]*class="exp-time[^"]*"[^>]*>(?:[^:]*:)?\s*([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})</span>'
         matches2 = re.findall(pattern2, content, re.DOTALL | re.IGNORECASE)
         
         # 模式3: 匹配旧版本的格式
@@ -37,34 +34,14 @@ def parse_existing_index(index_file="index.html"):
         pattern3 = r'<h3>([^<]+)</h3>.*?<p><strong>Time added:</strong>\s*([^<]+)</p>'
         matches3 = re.findall(pattern3, content, re.DOTALL | re.IGNORECASE)
         
-        # 处理模式1的结果（包含前缀信息）
-        processed_matches = []
-        for filename, full_time_str in matches1:
-            if '🔄 Updated:' in full_time_str:
-                # 之前被标记为Updated的文件
-                previously_updated_files.add(filename.strip())
-                time_str = full_time_str.replace('🔄 Updated:', '').strip()
-            else:
-                time_str = full_time_str.replace('Added:', '').strip()
-            processed_matches.append((filename, time_str))
+        all_matches = matches1 + matches2 + matches3
         
-        # 处理模式2的结果（提取时间部分）
-        for filename, full_match, time_str in matches2:
-            if '🔄 Updated:' in full_match:
-                previously_updated_files.add(filename.strip())
-            processed_matches.append((filename, time_str))
-        
-        # 处理模式3的结果
-        for filename, time_str in matches3:
-            processed_matches.append((filename, time_str))
-        
-        print(f"  🔍 找到 {len(matches1)} 个新格式匹配 (Added/Updated)")
+        print(f"  🔍 找到 {len(matches1)} 个新格式匹配")
         print(f"  🔍 找到 {len(matches2)} 个宽松格式匹配")
         print(f"  🔍 找到 {len(matches3)} 个旧格式匹配") 
-        print(f"  🔄 发现 {len(previously_updated_files)} 个之前标记为Updated的文件")
         
         processed_count = 0
-        for filename, time_str in processed_matches:
+        for filename, time_str in all_matches:
             # 清理文件名和时间字符串
             filename = filename.strip()
             time_str = time_str.strip()
@@ -82,15 +59,6 @@ def parse_existing_index(index_file="index.html"):
                 print(f"  ✅ {filename}: {time_str}")
             except ValueError as e:
                 print(f"  ⚠️  无法解析时间 '{time_str}' for {filename}: {e}")
-                # 尝试其他时间格式
-                try:
-                    # 尝试解析 ISO 格式或其他格式
-                    datetime_obj = datetime.fromisoformat(time_str.replace('T', ' ').replace('Z', ''))
-                    existing_times[filename] = datetime_obj
-                    processed_count += 1
-                    print(f"  ✅ {filename}: {time_str} (备用格式)")
-                except:
-                    print(f"  ❌ 完全无法解析时间 '{time_str}' for {filename}")
         
         print(f"📊 成功解析 {processed_count} 个文件的时间信息")
         
@@ -107,7 +75,7 @@ def parse_existing_index(index_file="index.html"):
     except Exception as e:
         print(f"❌ 解析现有索引文件时出错: {e}")
     
-    return existing_times, previously_updated_files
+    return existing_times
 
 def create_visualization_index(experiment_list, output_file="index.html"):
     """创建包含多个可视化链接的索引页面，按日期分组并支持折叠"""
@@ -325,10 +293,6 @@ def create_visualization_index(experiment_list, output_file="index.html"):
                 color: #7f8c8d;
                 font-size: 0.9em;
             }}
-            .exp-time.updated-today {{
-                color: #e74c3c;
-                font-weight: 600;
-            }}
             .exp-link {{
                 display: inline-block;
                 padding: 8px 16px;
@@ -404,19 +368,12 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         
         # 添加该日期下的所有实验
         for exp in experiments:
-            # 为今天更新的文件添加特殊标识
-            time_class = "exp-time"
-            if exp.get('is_updated_today', False):
-                time_class += " updated-today"
-                time_prefix = "🔄 Updated: "
-            else:
-                time_prefix = "Added: "
-            
+            # 统一使用Added格式，不区分更新状态
             html_content += f"""
                     <div class="exp-item">
                         <div class="exp-name">{exp['name']}</div>
                         <div class="exp-details">
-                            <span class="{time_class}">{time_prefix}{exp['original_date_str']}</span>
+                            <span class="exp-time">Added: {exp['original_date_str']}</span>
                             <a href="{exp['file']}" target="_blank" class="exp-link">
                                 🎮 Interact with 3D plot
                             </a>
