@@ -124,6 +124,10 @@ def create_visualization_index(experiment_list, output_file="index.html"):
             system_timestamp = max(mtime, ctime)  # 使用较新的时间
             system_datetime = datetime.fromtimestamp(system_timestamp)
             system_date = system_datetime.date()
+            
+            # 调试信息：显示文件的系统时间
+            print(f"    📁 {filename}: 系统时间 = {system_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            
         except Exception as e:
             print(f"  ❌ 无法获取 {filename} 的系统时间: {e}")
             system_datetime = datetime.now()
@@ -131,17 +135,28 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         
         # 决定使用哪个时间
         if filename in existing_times:
+            original_datetime = existing_times[filename]
+            original_date = original_datetime.date()
+            
+            print(f"    📅 {filename}: 原始时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"    🕒 今天日期 = {today}")
+            print(f"    🔍 系统日期 = {system_date}, 原始日期 = {original_date}")
+            
             # 检查文件是否在今天被修改过
-            if system_date == today:
+            # 条件：系统修改时间是今天 AND 系统时间比原始时间新
+            if system_date == today and system_datetime > original_datetime:
                 # 今天修改的文件：使用系统时间并标记为更新
                 date_obj = system_datetime
-                source = f"今天更新 (系统时间: {system_datetime.strftime('%H:%M:%S')})"
+                source = f"今天更新 (系统时间: {system_datetime.strftime('%H:%M:%S')}, 原时间: {original_datetime.strftime('%H:%M:%S')})"
                 updated_today_count += 1
                 print(f"  🔄 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
             else:
                 # 不是今天修改的文件：保持原有时间
-                date_obj = existing_times[filename]
-                source = "现有索引 (保持原始时间)"
+                date_obj = original_datetime
+                if system_date == today:
+                    source = f"今天但未更新 (系统={system_datetime.strftime('%H:%M:%S')} <= 原始={original_datetime.strftime('%H:%M:%S')})"
+                else:
+                    source = "现有索引 (保持原始时间)"
                 existing_count += 1
                 print(f"  📅 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         else:
@@ -159,7 +174,7 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         exp['time_display'] = date_obj.strftime('%H:%M:%S')
         exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
         exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
-        exp['is_updated_today'] = (filename in existing_times and system_date == today)
+        exp['is_updated_today'] = (filename in existing_times and system_date == today and system_datetime > existing_times[filename])
         
         experiments_by_date[date_key].append(exp)
     
