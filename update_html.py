@@ -120,18 +120,11 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         # 获取文件的系统时间信息
         try:
             mtime = os.path.getmtime(exp['file'])  # 文件修改时间
-            ctime = os.path.getctime(exp['file'])  # 文件创建时间
-            atime = os.path.getatime(exp['file'])  # 文件访问时间
-            
             system_datetime = datetime.fromtimestamp(mtime)
             system_date = system_datetime.date()
             
-            # 详细调试信息：显示所有时间戳
-            print(f"    📁 {filename}:")
-            print(f"      🕐 修改时间 (mtime) = {datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"      🕑 创建时间 (ctime) = {datetime.fromtimestamp(ctime).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"      🕒 访问时间 (atime) = {datetime.fromtimestamp(atime).strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"      📅 使用修改时间作为判断基准")
+            # 调试信息：显示文件的最新修改时间
+            print(f"    📁 {filename}: 最新修改时间 = {system_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
             
         except Exception as e:
             print(f"  ❌ 无法获取 {filename} 的系统时间: {e}")
@@ -142,43 +135,28 @@ def create_visualization_index(experiment_list, output_file="index.html"):
         if filename in existing_times:
             original_datetime = existing_times[filename]
             
-            print(f"      📋 原始记录时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"      🌅 今天日期 = {today}")
-            print(f"      📊 文件修改日期 = {system_date}")
+            print(f"    📅 {filename}: 原始记录时间 = {original_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"    🕒 今天日期 = {today}")
+            print(f"    🔍 文件修改日期 = {system_date}")
             
-            # 时间比较
-            time_diff_seconds = (system_datetime - original_datetime).total_seconds()
-            print(f"      ⏰ 时间差 = {time_diff_seconds:.1f} 秒 ({system_datetime.strftime('%H:%M:%S')} vs {original_datetime.strftime('%H:%M:%S')})")
-            
-            # 设置最小更新阈值（1秒），避免微小时间差的误判
-            MIN_UPDATE_THRESHOLD_SECONDS = 1.0
-            
-            # 检查文件是否在今天被修改过，且修改时间明显大于原始记录时间
-            if system_date == today and time_diff_seconds > MIN_UPDATE_THRESHOLD_SECONDS:
-                # 文件在今天被修改过，且时间明显更新：使用今天的修改时间
+            # 检查文件是否在今天被修改过，且修改时间 > 原始记录时间
+            if system_date == today and system_datetime > original_datetime:
+                # 文件在今天被修改过，且时间更新：使用今天的修改时间
                 date_obj = system_datetime
                 time_diff = system_datetime - original_datetime
                 source = f"今天修改 (修改时间: {system_datetime.strftime('%H:%M:%S')}, 比原始时间晚 {time_diff})"
                 updated_today_count += 1
                 print(f"  🔄 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
-            elif system_date == today and 0 < time_diff_seconds <= MIN_UPDATE_THRESHOLD_SECONDS:
-                # 文件是今天修改的，但时间差太小，认为是微小差异，不更新
-                date_obj = original_datetime
-                source = f"今天修改但时间差太小 ({time_diff_seconds:.1f}秒 ≤ {MIN_UPDATE_THRESHOLD_SECONDS}秒阈值)"
-                existing_count += 1
-                print(f"  ⏭️  {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
-            elif system_date == today and time_diff_seconds <= 0:
-                # 文件虽然是今天修改的，但时间没有比原始记录更新
+            elif system_date == today and system_datetime <= original_datetime:
+                # 文件虽然是今天修改的，但时间没有比原始记录更新（可能是文件系统问题）
                 date_obj = original_datetime
                 source = f"今天修改但时间未更新 (修改:{system_datetime.strftime('%H:%M:%S')} <= 原始:{original_datetime.strftime('%H:%M:%S')})"
                 existing_count += 1
                 print(f"  ⏭️  {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
-                print(f"      ⚠️  可能原因: 1)时钟不准确 2)文件时间戳没有正确更新 3)原始记录时间有误")
             else:
                 # 文件不是今天修改的：保持原有记录时间
                 date_obj = original_datetime
-                days_diff = (today - system_date).days
-                source = f"保持原始记录时间 (文件最后修改: {days_diff}天前)"
+                source = "保持原始记录时间"
                 existing_count += 1
                 print(f"  📅 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         else:
@@ -188,8 +166,17 @@ def create_visualization_index(experiment_list, output_file="index.html"):
             new_count += 1
             print(f"  🆕 {filename[:45]:<45} -> {date_obj.strftime('%Y-%m-%d %H:%M:%S')} ({source})")
         
-        print(f"      ✅ 最终使用时间: {date_obj.strftime('%Y-%m-%d %H:%M:%S')}")
-        print()  # 空行分隔
+        date_key = date_obj.strftime('%Y-%m-%d')  # YYYY-MM-DD format
+        
+        # 添加详细时间信息到实验数据
+        exp['datetime'] = date_obj
+        exp['date_key'] = date_key
+        exp['time_display'] = date_obj.strftime('%H:%M:%S')
+        exp['date_display'] = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+        exp['original_date_str'] = date_obj.strftime('%a %b %d %H:%M:%S %Y')  # 保持原格式
+        exp['is_updated_today'] = (filename in existing_times and system_date == today and system_datetime > original_datetime)
+        
+        experiments_by_date[date_key].append(exp)
     
     print(f"\n📊 文件处理统计:")
     print(f"  ✅ 现有文件 (保持原始时间): {existing_count}")
