@@ -1,0 +1,296 @@
+
+        <div id="audioContainer" style="position: fixed; top: 20px; right: 20px; z-index: 1000; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); min-width: 300px;">
+            <div style="margin-bottom: 10px; font-weight: bold; color: #333;">🎵 Music Player</div>
+            <audio id="audioPlayer" controls style="width: 100%;">
+                <source src="uX6uBHPGfSs_slice66.wav" type="audio/mpeg">
+                <source src="uX6uBHPGfSs_slice66.wav" type="audio/wav">
+                <source src="uX6uBHPGfSs_slice66.wav" type="audio/mp4">
+                Your browser does not support the audio element.
+            </audio>
+            <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                <div id="syncStatus">🔄 Ready to sync</div>
+                <div style="margin-top: 5px;">
+                    <label>
+                        <input type="checkbox" id="autoSync" checked> Auto-sync (pause mode)
+                    </label>
+                </div>
+                <div style="margin-top: 3px; font-size: 11px; color: #888;">
+                    Play: natural playback | Pause: precise sync
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var audioPlayer = document.getElementById('audioPlayer');
+                var autoSyncCheckbox = document.getElementById('autoSync');
+                var syncStatus = document.getElementById('syncStatus');
+                var plotlyDiv = document.querySelector('[data-plotly]') || document.querySelector('.plotly-graph-div');
+                
+                var isPlaying = false;
+                var isAnimationPlaying = false;
+                var currentFrame = 0;
+                var totalFrames = 120;
+                var framerate = 30;
+                var frameDuration = 1000 / framerate;
+                var lastSyncTime = 0;
+                var animationStartTime = 0;
+                var audioStartTime = 0;
+                var userSeeeking = false;
+                
+                // 自然播放动画（不强制同步）
+                function startNaturalAnimation() {
+                    if (isAnimationPlaying) {
+                        console.log('Animation already playing, skipping...');
+                        return;
+                    }
+                    
+                    console.log('Starting natural animation...');
+                    isAnimationPlaying = true;
+                    animationStartTime = Date.now();
+                    audioStartTime = audioPlayer.currentTime;
+                    
+                    function animateFrame() {
+                        // 检查音频是否真的在播放
+                        if (!isAnimationPlaying || audioPlayer.paused || audioPlayer.ended) {
+                            console.log('Stopping animation - isAnimationPlaying:', isAnimationPlaying, 'paused:', audioPlayer.paused, 'ended:', audioPlayer.ended);
+                            isAnimationPlaying = false;
+                            return;
+                        }
+                        
+                        var elapsed = (Date.now() - animationStartTime) / 1000;
+                        var targetFrame = Math.floor((audioStartTime + elapsed) * framerate);
+                        
+                        if (targetFrame >= 0 && targetFrame < totalFrames && targetFrame !== currentFrame) {
+                            currentFrame = targetFrame;
+                            
+                            if (plotlyDiv) {
+                                try {
+                                    Plotly.animate(plotlyDiv, [targetFrame.toString()], {
+                                        frame: {duration: frameDuration, redraw: true},
+                                        mode: 'immediate',
+                                        transition: {duration: 0}
+                                    });
+                                    
+                                    syncStatus.innerHTML = `▶️ Playing Frame ${targetFrame}/${totalFrames}`;
+                                } catch (e) {
+                                    console.warn('Animation error:', e);
+                                    isAnimationPlaying = false;
+                                    return;
+                                }
+                            }
+                        }
+                        
+                        // 继续动画循环，但再次检查播放状态
+                        if (targetFrame < totalFrames - 1 && !audioPlayer.paused && !audioPlayer.ended) {
+                            requestAnimationFrame(animateFrame);
+                        } else {
+                            isAnimationPlaying = false;
+                            if (targetFrame >= totalFrames - 1) {
+                                syncStatus.innerHTML = '🏁 Animation finished';
+                            }
+                        }
+                    }
+                    
+                    requestAnimationFrame(animateFrame);
+                }
+                
+                // 停止自然动画
+                function stopNaturalAnimation() {
+                    console.log('Stopping natural animation...');
+                    isAnimationPlaying = false;
+                }
+                
+                // 精确同步（仅在暂停时使用）
+                function preciseSyncToAudio() {
+                    if (!autoSyncCheckbox.checked) {
+                        return;
+                    }
+                    
+                    var audioTime = audioPlayer.currentTime;
+                    var targetFrame = Math.floor(audioTime * framerate);
+                    
+                    if (targetFrame >= 0 && targetFrame < totalFrames && targetFrame !== currentFrame) {
+                        currentFrame = targetFrame;
+                        
+                        if (plotlyDiv) {
+                            try {
+                                Plotly.animate(plotlyDiv, [targetFrame.toString()], {
+                                    frame: {duration: 0, redraw: true},
+                                    mode: 'immediate',
+                                    transition: {duration: 0}
+                                });
+                                
+                                // 更新滑块位置
+                                var slider = plotlyDiv.layout.sliders[0];
+                                if (slider) {
+                                    Plotly.relayout(plotlyDiv, {'sliders[0].active': targetFrame});
+                                }
+                                
+                                if (audioPlayer.paused) {
+                                    syncStatus.innerHTML = `⏸️ Synced to Frame ${targetFrame} (Audio: ${audioTime.toFixed(1)}s)`;
+                                }
+                            } catch (e) {
+                                console.warn('Sync error:', e);
+                            }
+                        }
+                    }
+                }
+                
+                # 音频事件监听器
+                audioPlayer.addEventListener('play', function() {
+                    if (userSeeeking) return;
+                    
+                    isPlaying = true;
+                    syncStatus.innerHTML = '▶️ Playing...';
+                    
+                    // 启动自然播放动画
+                    setTimeout(function() {
+                        startNaturalAnimation();
+                    }, 50);
+                });
+                
+                audioPlayer.addEventListener('pause', function() {
+                    if (userSeeeking) return;
+                    
+                    isPlaying = false;
+                    stopNaturalAnimation();
+                    
+                    // 暂停时进行精确同步
+                    setTimeout(function() {
+                        if (audioPlayer.paused) {  // 确认真的是暂停状态
+                            preciseSyncToAudio();
+                        }
+                    }, 50);
+                });
+                
+                audioPlayer.addEventListener('ended', function() {
+                    isPlaying = false;
+                    stopNaturalAnimation();
+                    syncStatus.innerHTML = '🏁 Finished';
+                });
+                
+                // 用户拖拽音频进度条时
+                audioPlayer.addEventListener('seeking', function() {
+                    userSeeeking = true;
+                    stopNaturalAnimation();
+                });
+                
+                audioPlayer.addEventListener('seeked', function() {
+                    userSeeeking = false;
+                    
+                    // 跳转后立即同步
+                    preciseSyncToAudio();
+                    
+                    // 如果音频在播放，重新启动自然动画
+                    if (!audioPlayer.paused) {
+                        setTimeout(function() {
+                            if (!audioPlayer.paused) {  // 再次确认
+                                startNaturalAnimation();
+                            }
+                        }, 100);
+                    }
+                });
+                
+                // 添加备用的播放检测机制
+                audioPlayer.addEventListener('timeupdate', function() {
+                    // 如果音频在播放但动画没有运行，启动动画
+                    if (!audioPlayer.paused && !isAnimationPlaying && !userSeeeking) {
+                        console.log('Backup play detection triggered');
+                        startNaturalAnimation();
+                    }
+                });
+                
+                // Plotly控件事件监听
+                if (plotlyDiv) {
+                    // 用户拖拽动画滑块时
+                    plotlyDiv.on('plotly_sliderchange', function(eventData) {
+                        if (!autoSyncCheckbox.checked || userSeeeking) return;
+                        
+                        var step = eventData.step;
+                        var frameNumber = parseInt(step.label);
+                        if (!isNaN(frameNumber)) {
+                            var targetTime = frameNumber / framerate;
+                            
+                            // 停止自然动画
+                            stopNaturalAnimation();
+                            
+                            // 同步音频到目标时间
+                            audioPlayer.currentTime = targetTime;
+                            currentFrame = frameNumber;
+                            
+                            syncStatus.innerHTML = `🎯 Manual sync to Frame ${frameNumber}`;
+                            
+                            // 如果音频在播放，重新启动自然动画
+                            if (!audioPlayer.paused) {
+                                setTimeout(function() {
+                                    startNaturalAnimation();
+                                }, 100);
+                            }
+                        }
+                    });
+                    
+                    // Plotly播放按钮事件
+                    plotlyDiv.on('plotly_animated', function() {
+                        if (!autoSyncCheckbox.checked) return;
+                        
+                        // 如果Plotly动画开始，同步启动音频
+                        if (audioPlayer.paused) {
+                            audioPlayer.play();
+                        }
+                    });
+                }
+                
+                // 手动同步按钮
+                var syncButton = document.createElement('button');
+                syncButton.innerHTML = '🎯 Sync Now';
+                syncButton.style.cssText = 'margin-top: 5px; padding: 5px 10px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; margin-right: 5px;';
+                syncButton.onclick = function() {
+                    preciseSyncToAudio();
+                };
+                
+                // 重置按钮
+                var resetButton = document.createElement('button');
+                resetButton.innerHTML = '⏮️ Reset';
+                resetButton.style.cssText = 'margin-top: 5px; padding: 5px 10px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; margin-right: 5px;';
+                resetButton.onclick = function() {
+                    stopNaturalAnimation();
+                    audioPlayer.currentTime = 0;
+                    currentFrame = 0;
+                    if (plotlyDiv) {
+                        Plotly.animate(plotlyDiv, ['0'], {
+                            frame: {duration: 0, redraw: true},
+                            mode: 'immediate',
+                            transition: {duration: 0}
+                        });
+                    }
+                    syncStatus.innerHTML = '⏮️ Reset to start';
+                };
+                
+                // 手动播放控制按钮
+                var playButton = document.createElement('button');
+                playButton.innerHTML = '▶️ Force Play';
+                playButton.style.cssText = 'margin-top: 5px; padding: 5px 10px; background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 12px;';
+                playButton.onclick = function() {
+                    if (audioPlayer.paused) {
+                        audioPlayer.play();
+                    } else {
+                        // 强制启动动画（即使音频已在播放）
+                        if (!isAnimationPlaying) {
+                            console.log('Force starting animation...');
+                            startNaturalAnimation();
+                        }
+                    }
+                };
+                
+                var buttonContainer = document.createElement('div');
+                buttonContainer.appendChild(syncButton);
+                buttonContainer.appendChild(resetButton);
+                buttonContainer.appendChild(playButton);
+                document.getElementById('audioContainer').appendChild(buttonContainer);
+                
+                // 初始化
+                syncStatus.innerHTML = '🔄 Ready - Play for natural sync, Pause for precise sync';
+            });
+        </script>
+        
